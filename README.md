@@ -101,6 +101,10 @@ These are real, and worth knowing before you rely on it:
   first result is kept, and both callers get that result back, but the side
   effect happened twice. Don't run the same run ID in parallel.
 
+## Author
+
+Built and maintained by **Ananda Poudel** ([email@anandapoudel.com](mailto:email@anandapoudel.com)).
+
 ## License
 
-MIT
+MIT © Ananda Poudel
