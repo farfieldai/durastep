@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -111,10 +112,31 @@ class SQLiteStore:
             # Autocommit: each statement is its own transaction, so a stored
             # result is durable as soon as put() returns.
             conn = sqlite3.connect(self.path, timeout=self.timeout, isolation_level=None)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute(_SCHEMA)
+            try:
+                self._setup(conn)
+            except BaseException:
+                conn.close()
+                raise
             self._local.conn = conn
         return conn
+
+    def _setup(self, conn: sqlite3.Connection) -> None:
+        # Switching a new file to WAL needs an exclusive lock, and when several
+        # processes open the same new file at once SQLite reports "locked"
+        # straight away instead of waiting on the busy timeout. WAL is stored
+        # in the file, so retrying until one process has switched it works.
+        deadline = time.monotonic() + self.timeout
+        delay = 0.01
+        while True:
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute(_SCHEMA)
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 0.25)
 
     def get(self, run_id: str, step_key: str) -> StoredResult | None:
         row = self._conn().execute(
